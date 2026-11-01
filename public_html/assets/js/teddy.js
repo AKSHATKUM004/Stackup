@@ -1,5 +1,5 @@
 /* Teddy — floating STACK-UP AI agent: chat, eye tracking, blinking, lip-sync (ready for ElevenLabs voice),
-   and section-aware nudges. Replies come from /api/teddy (Claude, Vercel function);
+   and section-aware nudges. Replies come from /api/teddy (Gemini, Vercel function);
    if that endpoint is unavailable, a local knowledge base answers instead. */
 (function () {
   const API = '/api/teddy';

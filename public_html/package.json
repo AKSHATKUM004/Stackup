@@ -1,8 +1,5 @@
 {
   "name": "stackup-site",
   "private": true,
-  "type": "module",
-  "dependencies": {
-    "@anthropic-ai/sdk": "^1.3.0"
-  }
+  "type": "module"
 }

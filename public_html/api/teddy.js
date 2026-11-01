@@ -1,9 +1,8 @@
 // Teddy — STACK-UP website assistant (Vercel serverless function).
-// Calls Claude server-side so the API key never reaches the browser.
-// Set ANTHROPIC_API_KEY in Vercel → Project → Settings → Environment Variables.
-import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic();
+// Calls Google Gemini server-side so the API key never reaches the browser.
+// Set GEMINI_API_KEY in Vercel → Project → Settings → Environment Variables.
+// Optional: GEMINI_MODEL to switch models (default below).
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 const SYSTEM = `You are Teddy, the friendly teddy-bear AI assistant floating on the STACK-UP website (stackup.digital). You talk with visitors who may become clients. Your replies are shown in a small chat bubble, so keep them short and conversational: usually 1–3 sentences, plain text, no markdown, no bullet lists, no emoji.
 
@@ -53,7 +52,7 @@ function normalise(raw) {
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: "Assistant not configured" });
+  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: "Assistant not configured" });
 
   const origin = req.headers.origin || "";
   if (origin && !ALLOWED.some((r) => r.test(origin))) return res.status(403).json({ error: "Origin not allowed" });
@@ -65,34 +64,29 @@ export default async function handler(req, res) {
   if (!messages.length || messages[messages.length - 1].role !== "user") return res.status(400).json({ error: "No user message" });
 
   try {
-    const response = await client.beta.messages.create({
-      model: "claude-opus-5-5",
-      max_tokens: 4096,
-      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages,
-      output_config: { effort: "low" },                 // quick, chatty replies
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",                             // retry on another model if a safety classifier declines
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM }] },
+        contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+        generationConfig: { maxOutputTokens: 600 },
+      }),
     });
-
-    if (response.stop_reason === "refusal") {
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 429) return res.status(429).json({ error: "Assistant is busy, please try again shortly" });
+    if (!r.ok) {
+      console.error("Teddy: Gemini API error", r.status, data?.error?.message);
+      return res.status(502).json({ error: "Assistant temporarily unavailable" });
+    }
+    if (data?.promptFeedback?.blockReason) {
       return res.status(200).json({ reply: "I can't help with that one, but I'm happy to chat about your project or STACK-UP's services!" });
     }
-    const reply = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const reply = (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
     if (!reply) return res.status(502).json({ error: "Empty reply" });
     return res.status(200).json({ reply });
   } catch (err) {
-    if (err instanceof Anthropic.RateLimitError) {
-      return res.status(429).json({ error: "Assistant is busy, please try again shortly" });
-    }
-    if (err instanceof Anthropic.APIConnectionError) {
-      console.error("Teddy: connection error", err.message);
-      return res.status(502).json({ error: "Assistant temporarily unavailable" });
-    }
-    if (err instanceof Anthropic.APIError) {
-      console.error("Teddy: Claude API error", err.status, err.message);
-      return res.status(502).json({ error: "Assistant temporarily unavailable" });
-    }
-    throw err;
+    console.error("Teddy: request failed", err?.message);
+    return res.status(502).json({ error: "Assistant temporarily unavailable" });
   }
 }
