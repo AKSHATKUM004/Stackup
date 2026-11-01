@@ -178,7 +178,13 @@ function createInk({ container, canvas, base, ink, mark = false, wordmark = null
     (chars.length ? chars : [word]).forEach((el) => {
       range.selectNodeContents(el);
       const b = range.getBoundingClientRect();
-      wordCtx.fillText(el.textContent, b.left - r.left, b.top - r.top + asc);
+      // Safari's canvas ignores font-stretch, so squeeze/stretch each glyph to its real on-page width.
+      const w = wordCtx.measureText(el.textContent).width || 1;
+      wordCtx.save();
+      wordCtx.translate(b.left - r.left, b.top - r.top + asc);
+      wordCtx.scale(b.width / w, 1);
+      wordCtx.fillText(el.textContent, 0, 0);
+      wordCtx.restore();
     });
     wordTex.needsUpdate = true;
     wake();

@@ -168,7 +168,7 @@
   function localBrain(q) {
     const s = q.toLowerCase();
     // Whole-word match so "ai" doesn't fire on "email" or "hi" on "this".
-    const has = (...w) => w.some((x) => new RegExp(`\\b${x}`, 'i').test(s));
+    const has = (...w) => w.some((x) => new RegExp(`\\b${x}\\b`, 'i').test(s));
     if (has('price', 'pricing', 'cost', 'budget', 'charge', 'kitna', 'rate', 'fee'))
       return "Every project is priced by scope and written into a fixed proposal before work starts, so the number never moves without you agreeing. The quickest way to get yours is a free intro call. [[CTA]]";
     if (has('how long', 'time', 'timeline', 'days', 'weeks', 'deadline', 'kab'))
@@ -193,6 +193,8 @@
       return "The fastest route is WhatsApp at +91 92797 45034, or email support@stackup.digital. [[CTA]]";
     if (has('website', 'web', 'site', 'landing', 'ecommerce', 'shop', 'store'))
       return "We design and build fast, accessible websites and web apps, from a single landing page up to full platforms. Is this a new build or a redesign?";
+    if (has('llm', 'model', 'gpt', 'gemini', 'chatgpt', 'which ai', 'what ai'))
+      return "I'm Teddy, STACK-UP's assistant, running on Google's Gemini. We build assistants like me for clients too. Want one for your business? [[GO:services]]";
     if (has('hi', 'hello', 'hey', 'namaste'))
       return "Hey there! What are you planning to build: a website, an app, an AI agent, or something else?";
     return "Good question. That's best answered on a quick intro call. Meanwhile, I can tell you about what we build or how we work. [[CTA]]";
