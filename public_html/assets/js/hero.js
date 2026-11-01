@@ -18,7 +18,7 @@ const css = (v) => new THREE.Color(getComputedStyle(document.documentElement).ge
 const STEP = 1 / 60;
 const VERT = /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
-function createInk({ container, canvas, base, ink, mark = false, wordmark = null, coveredBy = null, introPour = false, word = null, wordColor = null, wordInkColor = null }) {
+function createInk({ container, canvas, base, ink, mark = false, wordmark = null, coveredBy = null, introPour = false, word = null, wordColor = null, wordInkColor = null, scrollWord = false }) {
   const CFG = { sim: 128, dye: 512, velDiss: 0.962, dyeDiss: 0.988, iters: 18, radius: 6e-5, force: 5900, reveal: 3.9, edge: 0.5,
                 flow: 7 / 128, maxFlow: 0.12, scatter: 0.9 };
 
@@ -181,7 +181,7 @@ function createInk({ container, canvas, base, ink, mark = false, wordmark = null
       // Safari's canvas ignores font-stretch, so squeeze/stretch each glyph to its real on-page width.
       const w = wordCtx.measureText(el.textContent).width || 1;
       wordCtx.save();
-      wordCtx.translate(b.left - r.left, b.top - r.top + asc);
+      wordCtx.translate(b.left - r.left, b.top - r.top + asc + composite.uniforms.uWordShift.value * H); // undo the scroll offset
       wordCtx.scale(b.width / w, 1);
       wordCtx.fillText(el.textContent, 0, 0);
       wordCtx.restore();
@@ -200,13 +200,14 @@ function createInk({ container, canvas, base, ink, mark = false, wordmark = null
     word.addEventListener('glword', enableWord);
     if (word.dataset.glready) requestAnimationFrame(enableWord);
     // refit (font-size changes) or resize → redraw
-    new MutationObserver(() => requestAnimationFrame(drawWord)).observe(word, { attributes: true, attributeFilter: ['style'] });
+    let lastFont = '';
+    new MutationObserver(() => { if (word.style.fontSize !== lastFont) { lastFont = word.style.fontSize; requestAnimationFrame(drawWord); } }).observe(word, { attributes: true, attributeFilter: ['style'] });
     if (document.fonts) document.fonts.addEventListener('loadingdone', () => requestAnimationFrame(drawWord));
   }
 
   /* ---------- composite ---------- */
   let overlay;
-  const composite = pass(`uniform sampler2D uDye, uOverlay, uWord; uniform vec3 uBase, uInk, uWordC, uWordInkC; uniform float uReveal, uEdge, uFluid, uHasOverlay, uWordOn; varying vec2 vUv;
+  const composite = pass(`uniform sampler2D uDye, uOverlay, uWord; uniform vec3 uBase, uInk, uWordC, uWordInkC; uniform float uReveal, uEdge, uFluid, uHasOverlay, uWordOn, uWordShift; varying vec2 vUv;
     void main(){
       float raw = texture2D(uDye, vUv).r * uReveal * uFluid;
       float aa = max(fwidth(raw), 0.01);
@@ -214,13 +215,14 @@ function createInk({ container, canvas, base, ink, mark = false, wordmark = null
       vec3 top = mix(uBase, uInk, mask);
       vec3 over = min(texture2D(uOverlay, vUv).rgb, 1.0) * uHasOverlay;
       vec3 col = top + over - 2.0 * top * over;
-      float wa = texture2D(uWord, vUv).a * uWordOn;
+      vec2 wuv = vec2(vUv.x, vUv.y - uWordShift);            // wordmark scrolls up over the mark
+      float wa = (wuv.y < 0.0 ? 0.0 : texture2D(uWord, wuv).a) * uWordOn;
       col = mix(col, mix(uWordC, uWordInkC, mask), wa);   // wordmark flips colour inside the ink
       gl_FragColor = vec4(col, 1.0);
     }`,
     { uDye: { value: null }, uOverlay: { value: null }, uBase: { value: base }, uInk: { value: ink }, uReveal: { value: CFG.reveal },
       uEdge: { value: CFG.edge }, uFluid: { value: fluidOK ? 1 : 0 }, uHasOverlay: { value: mark ? 1 : 0 },
-      uWord: { value: wordTex }, uWordOn: { value: 0 }, uWordC: { value: wordColor || new THREE.Color(0, 0, 0) }, uWordInkC: { value: wordInkColor || new THREE.Color(0, 0, 0) } });
+      uWord: { value: wordTex }, uWordOn: { value: 0 }, uWordShift: { value: 0 }, uWordC: { value: wordColor || new THREE.Color(0, 0, 0) }, uWordInkC: { value: wordInkColor || new THREE.Color(0, 0, 0) } });
 
   /* ---------- sizing ---------- */
   let W = 1, H = 1, DPR = 1;
@@ -318,6 +320,17 @@ function createInk({ container, canvas, base, ink, mark = false, wordmark = null
     const c = coveredBy.getBoundingClientRect().top <= 0;
     if (c !== covered) { covered = c; covered ? sleep() : wake(); }
   }, { passive: true });
+  if (word && scrollWord) {
+    let queued = false;
+    const onScroll = () => {
+      const off = Math.min(Math.max(window.scrollY, 0), H * 1.2);
+      word.style.transform = `translate3d(0,${-off}px,0)`;
+      composite.uniforms.uWordShift.value = off / H;
+      if (!running && !queued && visible && !covered) { queued = true; requestAnimationFrame(() => { queued = false; draw(); }); }
+    };
+    addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  }
   new ResizeObserver(resize).observe(container);
   resize();
 
@@ -381,7 +394,7 @@ const hero = createInk({
   base: css('--paper'), ink: new THREE.Color('#111111'),
   mark: true, wordmark: heroEl.querySelector('[data-wordmark]'),
   coveredBy: document.querySelector('.reel'), introPour: true,
-  word: heroEl.querySelector('[data-wordmark]'), wordColor: css('--red'), wordInkColor: css('--paper')
+  word: heroEl.querySelector('[data-wordmark]'), wordColor: css('--red'), wordInkColor: css('--paper'), scrollWord: true
 });
 const footEl = document.querySelector('[data-ink-footer]');
 const footer = footEl && createInk({

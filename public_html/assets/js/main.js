@@ -67,7 +67,8 @@ function fitAll() {
     el.style.fontSize = '100px';
     const range = document.createRange();
     range.selectNodeContents(el);
-    const textW = range.getBoundingClientRect().width;
+    const scale = el.getBoundingClientRect().width / (el.offsetWidth || 1) || 1;   // ignore any scale transform
+    const textW = range.getBoundingClientRect().width / scale;
     const cs = getComputedStyle(el);
     const avail = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     if (textW) el.style.fontSize = (100 * avail / textW).toFixed(2) + 'px';
@@ -140,7 +141,8 @@ $$('[data-scramble]').forEach((el) => {
 const header = $('#header'), hud = $('.hud'), hudPct = $('#hudPct');
 let lastY = 0;
 lenis.on('scroll', ({ scroll, limit }) => {
-  header.classList.toggle('is-hidden', scroll > lastY && scroll > 300 && !menuOpen);
+  header.classList.toggle('is-hidden', scroll > lastY && scroll > window.innerHeight * 1.4 && !menuOpen);
+  header.classList.toggle('is-compact', scroll > 40);
   lastY = scroll;
   const pct = String(Math.round((scroll / (limit || 1)) * 100)).padStart(3, '0');
   if (pct !== hudPct.textContent) hudPct.textContent = pct;
@@ -175,7 +177,12 @@ if (!reduceMotion) {
   /* ---------------- hero + reel ---------------- */
   gsap.to('.hero__intro', { opacity: 0, y: -30, ease: 'none', scrollTrigger: { trigger: '.reel', start: 'top bottom', end: 'top 40%', scrub: true } });
   gsap.fromTo('.reel__media img', { scale: 1.25 }, { scale: 1, ease: 'none', scrollTrigger: { trigger: '.reel', start: 'top bottom', end: 'bottom top', scrub: true } });
-  gsap.from('.reel__title', { yPercent: 40, ease: 'none', scrollTrigger: { trigger: '.reel', start: 'top bottom', end: 'top top', scrub: true } });
+  // showreel card: rises narrower than the screen and widens to full bleed as it lands;
+  // its title rides from the top of the card down to the bottom.
+  gsap.fromTo('.reel', { '--reel-in': '6%' }, { '--reel-in': '0%', ease: 'none', scrollTrigger: { trigger: '.reel', start: 'top 85%', end: 'top top', scrub: true } });
+  gsap.fromTo('.reel__title', { y: 0 }, { y: () => $('.reel').offsetHeight - $('.reel__title').offsetHeight - parseFloat(getComputedStyle($('.reel__title')).top) - window.innerWidth * 0.06 - 24, ease: 'none',
+    scrollTrigger: { trigger: '.reel', start: 'top bottom', end: 'top top', scrub: true, invalidateOnRefresh: true } });
+  gsap.fromTo('.reel__title', { scale: 0.88 }, { scale: 1, ease: 'none', scrollTrigger: { trigger: '.reel', start: 'top 85%', end: 'top top', scrub: true } });
 
   /* ---------------- headings: characters rise with the scroll ---------------- */
   $$('[data-chars]').forEach((h) => {
